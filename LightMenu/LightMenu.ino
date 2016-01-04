@@ -6,6 +6,9 @@
   User interface (and logic for an Arduino powered fading light alarm clock.
 */
 #include <Adafruit_NeoPixel.h>
+#include <avr/power.h>
+
+
 #include "tStruct.h"
 //typedef tStruct timeStruct;
 tStruct currentTime;  //global variable to hold the "current time" (when it was last checked)
@@ -21,7 +24,7 @@ mode opMode;
 
 #define PIN            7
 // How many NeoPixels are attached to the Arduino?
-#define NUMPIXELS      16
+#define NUMPIXELS      4
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
 
@@ -32,6 +35,7 @@ void setup() {
   while (!Serial)
     printMenu();
   opMode = runMode;
+  strip.begin();
 }
 
 void loop() {
@@ -56,7 +60,15 @@ void loop() {
     }
     printMenu();
   }
-
+  
+  strip.setPixelColor(1, strip.Color(255,0,0));
+  strip.show();
+    for(int ii=0; ii<32;ii++) {
+        
+      strip.setPixelColor(1, setColourFade(strip.Color(8,8,0), strip.Color(64,64,0), ii));
+      strip.show();
+      delay(1000);
+    }
 
   //====================================
   //Lighting mode handlers
@@ -64,6 +76,7 @@ void loop() {
   if (opMode == runMode) {
     //Check that the alarm time hasn't passed
     readTime = getTimeFromRTC();
+    
     if (((currentTime.hours < alarmTime.hours) && (currentTime.mins < alarmTime.mins)) && ((readTime.hours > alarmTime.hours) || (readTime.mins > alarmTime.mins))) {
       //Since the last time we checked, the time has passed the alarm time. We should perform wakeup. 
       opMode = wakeupMode;
@@ -90,7 +103,7 @@ void loop() {
   }
 
 
-  delay(1);  //prevent racing
+  delay(1000);  //prevent racing
 }
 
 tStruct getTimeFromRTC() {
@@ -204,10 +217,16 @@ uint32_t setColourFade (uint32_t startColour, uint32_t endColour, int currentSte
       g1 = (uint8_t)(endColour >>  8),
       b1 = (uint8_t)endColour;
   
-  r=round(((r-r1)/numSteps)*currentStep);  //Overwrite the r, g, b, values with the new ones.
-  g=round(((g-g1)/numSteps)*currentStep);
-  b=round(((b-b1)/numSteps)*currentStep);
+  r=r+round(((r1-r)/numSteps)*currentStep);  //Overwrite the r, g, b, values with the new ones.
+  g=g+round(((g1-g)/numSteps)*currentStep);
+  b=b+round(((b1-b)/numSteps)*currentStep);
+  Serial.print(r,DEC);
+   Serial.print(", ");
+   Serial.print(g,DEC);
+   Serial.print(", ");
+   Serial.println(b,DEC);
   
+  Serial.println("setColourFade was called");
   return strip.Color(r,g,b);
 }
 
