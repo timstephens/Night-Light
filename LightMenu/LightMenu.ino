@@ -4,16 +4,16 @@
   Tim Stephens
   31 December 2015
   User interface (and logic for an Arduino powered fading light alarm clock.
-  
+
   NOTE
   =====
-  
-  This uses the RTCx library, which relies on passing the current Unix time around. 
+
+  This uses the RTCx library, which relies on passing the current Unix time around.
   Since the UI here is supposed to be simpler than that and will hide the date from
-  the user, we're going to use a separate time struct for our handling, and pass 
-  values from that around outside the routines that actually check in with the clock 
+  the user, we're going to use a separate time struct for our handling, and pass
+  values from that around outside the routines that actually check in with the clock
   module.
-  
+
   */
 #include <Adafruit_NeoPixel.h>
 #include <avr/power.h>
@@ -66,10 +66,11 @@ void setup() {
   opMode = runMode;
   strip.begin();
   Wire.begin();
-   // The address used by the DS1307 is also used by other devices (eg
+  // The address used by the DS1307 is also used by other devices (eg
   // MCP3424 ADC). Test for a MCP7941x device first.
   uint8_t addressList[] = {RTCx::MCP7941xAddress,
-			   RTCx::DS1307Address};
+                           RTCx::DS1307Address
+                          };
 
   // Autoprobe to find a real-time clock.
   if (rtc.autoprobe(addressList, sizeof(addressList))) {
@@ -77,15 +78,15 @@ void setup() {
     Serial.print("Autoprobe found ");
     switch (rtc.getDevice()) {
       case RTCx::DS1307:
-	Serial.print("DS1307");
-	break;
-    case RTCx::MCP7941x:
-      Serial.print("MCP7941x");
-      break;
-    default:
-      // Ooops. Must update this example!
-      Serial.print("unknown device");
-      break;
+        Serial.print("DS1307");
+        break;
+      case RTCx::MCP7941x:
+        Serial.print("MCP7941x");
+        break;
+      default:
+        // Ooops. Must update this example!
+        Serial.print("unknown device");
+        break;
     }
     Serial.print(" at 0x");
     Serial.println(rtc.getAddress(), HEX);
@@ -95,14 +96,14 @@ void setup() {
     Serial.println("No RTCx found");
     return;
   }
-  
+
   currentTime = getTimeFromRTC();
 }
 
 void loop() {
   String input;
   tStruct readTime; //a holder space to put time data that's read back from the clock.
-    
+
   //========================================
   //UI stuff with the serial port
   if (Serial.available()) {
@@ -121,41 +122,51 @@ void loop() {
     }
     printMenu();
   }
-  
-//  strip.setPixelColor(1, strip.Color(255,0,0));
-//  strip.show();
-//    for(int ii=0; ii<32;ii++) {
-//        
-//      strip.setPixelColor(1, setColourFade(strip.Color(8,8,0), strip.Color(64,64,0), ii));
-//      strip.show();
-//      delay(1000);
-//    }
+
+  //  strip.setPixelColor(1, strip.Color(255,0,0));
+  //  strip.show();
+  //    for(int ii=0; ii<32;ii++) {
+  //
+  //      strip.setPixelColor(1, setColourFade(strip.Color(8,8,0), strip.Color(64,64,0), ii));
+  //      strip.show();
+  //      delay(1000);
+  //    }
 
   //====================================
   //Lighting mode handlers
 
-  if (opMode == runMode) {
+ 
     //Check that the alarm time hasn't passed
     readTime = getTimeFromRTC();
-    
-    if (((currentTime.hours < alarmTime.hours) && (currentTime.mins < alarmTime.mins)) && ((readTime.hours > alarmTime.hours) || (readTime.mins > alarmTime.mins))) {
-      //Since the last time we checked, the time has passed the alarm time. We should perform wakeup. 
+
+    Serial.println(readTime.mins, DEC);
+    Serial.println(currentTime.mins, DEC);
+ if (opMode == runMode) {
+    //if (((currentTime.hours < alarmTime.hours) && (currentTime.mins < alarmTime.mins)) && ((readTime.hours > alarmTime.hours) || (readTime.mins > alarmTime.mins))) {
+    if ((readTime.hours == alarmTime.hours) && (readTime.mins == alarmTime.mins)) {
+      //Since the last time we checked, the time has passed the alarm time. We should perform wakeup.
       opMode = wakeupMode;
-    } else {
-      currentTime = readTime; //Advance the stored time value to the 'current time' for the next time we check.
+      Serial.println("***********************");
+      Serial.println("******* ALARM *********");
+      Serial.println("***********************");
+
     }
-        //Display whatever pattern we're supposed to be showing
+
+    currentTime = readTime; //Advance the stored time value to the 'current time' for the next time we check.
+
+    //Display whatever pattern we're supposed to be showing
   } else if (opMode == wakeupMode) {
     //should be fading up the lights
     //Check elapsed time since wakeup mode start, and ensure that the fade is progressing properly
     //We'll use a granularity of 20s, which seems to be smooth with the rainbow effect,
     //and then use similar logic to get the brightness fade over.
     /*
-    What needs to happen here is that the pattern needs to swap from one to another. 
-    Probably we need to have both patterns stored in arrays as Color values, and then 'simply' fade fron one to another. This may be a pain in the proverbial though. 
+    What needs to happen here is that the pattern needs to swap from one to another.
+    Probably we need to have both patterns stored in arrays as Color values, and then 'simply' fade fron one to another. This may be a pain in the proverbial though.
     //For each 20s, increase the brightness by FADETIME(s)/20s
     //setColourFade (startColour, endColour, currentStep);
     */
+    Serial.print("W");
     
 
   } else if (opMode == sleepMode) {
@@ -171,24 +182,29 @@ tStruct getTimeFromRTC() {
   //Get the current time from the i2c RTC
   //Will set the global time variable
   tStruct myTimeStruct;
-  struct RTCx::tm tm;  //From RTCx library, this is a C-style time struct. 
+  struct RTCx::tm tm;  //From RTCx library, this is a C-style time struct.
   rtc.readClock(tm);  //Load the current timestamp into the tm variable
   printTm(Serial, &tm); //Print the time from the RTC
-  
+
   myTimeStruct.hours =  tm.tm_hour;
   myTimeStruct.mins = tm.tm_min;
-  
- // Serial.println("getTimeFromRTC");
+
+  // Serial.println("getTimeFromRTC");
   return myTimeStruct;
 }
 
 
 void printMenu() {
   currentTime = getTimeFromRTC();
+  Serial.print("Time  ");
   Serial.print(currentTime.hours, DEC);
   Serial.print(":");
   Serial.println(currentTime.mins, DEC);
-  
+
+  Serial.print("Alarm ");
+  Serial.print(alarmTime.hours, DEC);
+  Serial.print(":");
+  Serial.println(alarmTime.mins, DEC);
   //Display the menu on tty
   Serial.println("\n1: Set time"); //Add the newline to make the menu more readable
   Serial.println("2: Set Wakeup");
@@ -200,11 +216,11 @@ void printMenu() {
 
 
 void setTime() {
-  struct RTCx::tm tm;  //From RTCx library, this is a C-style time struct. 
+  struct RTCx::tm tm;  //From RTCx library, this is a C-style time struct.
   tStruct setTime;
   Serial.println("SET THE TIME");
   setTime = getTimeValue();
-  
+
   rtc.readClock(&tm); //Load this to keep the date value etc. in place, and to give us a valid time struct to send back to the RTC (which otherwise will be full of undefined values)
   tm.tm_hour = setTime.hours;
   tm.tm_min = setTime.mins;
@@ -213,7 +229,7 @@ void setTime() {
   Serial.print(setTime.hours, DEC);
   Serial.print(":");
   Serial.println(setTime.mins, DEC);
-  
+
 }
 
 
@@ -221,16 +237,17 @@ void setWakeup() {
   //Get the wakeup time from the user, and then set it into the global alarm time.
   //Wakeup should happen in a sequence of a few minutes after the alarm time that's set here.
   //We're initially going to fade up the lights
-  
+
   //There's mileage in just setting the global to free a bit or RAM if necessary
-  tStruct almTime;
+  //tStruct almTime;
   Serial.println("SET THE WAKEUP TIME");
-  almTime = getTimeValue();
+  alarmTime = getTimeValue();
 
   Serial.print("almTime");
-  Serial.print(almTime.hours, DEC);
-  Serial.println(almTime.mins, DEC);
-  alarmTime = almTime; 
+  Serial.print(alarmTime.hours, DEC);
+  Serial.print(":");
+  Serial.println(alarmTime.mins, DEC);
+  //alarmTime = almTime;
 }
 
 tStruct getTimeValue() {
@@ -250,6 +267,7 @@ tStruct getTimeValue() {
     Serial.print(time);
     Serial.print(" -> ");
     Serial.print(myTimeStruct.hours, DEC);
+    Serial.print(":");
     Serial.println(myTimeStruct.mins, DEC);
   }
   return myTimeStruct;
@@ -257,52 +275,52 @@ tStruct getTimeValue() {
 
 
 uint32_t setColourFade (uint32_t startColour, uint32_t endColour, int currentStep) {
-  //Do some computation to work out the current fade colour position, and then return it ready for setting to the strip. 
-  //For a first attempt, we just linearly fade from the first setpoint on each channel to the last. 
+  //Do some computation to work out the current fade colour position, and then return it ready for setting to the strip.
+  //For a first attempt, we just linearly fade from the first setpoint on each channel to the last.
   //Check out the Adafruit library for the definition of the Color member...
   /*
   Here's the line from the library that shows how it's converted:
-  
+
   // Convert separate R,G,B into packed 32-bit RGB color.
   // Packed format is always RGB, regardless of LED strand color order.
   uint32_t Adafruit_NeoPixel::Color(uint8_t r, uint8_t g, uint8_t b) {
     return ((uint32_t)r << 16) | ((uint32_t)g <<  8) | b;
   }
-  
+
   ALGORITHM
- 
+
   Unpack start and end colour into separate RGB members (as Uint8s)
   Calculate colour step for RGB values round((start-end)/numSteps) (note that this may be negative value)
-  Assuming N steps, calculate the RGB values to return by multiplying colour step by current step number. 
-  
-  
-  */
-  
-  int numSteps = 32; //Number of different colours for the fade to happen over
- 
+  Assuming N steps, calculate the RGB values to return by multiplying colour step by current step number.
 
-  //Unpack the Color values into bytes (from the ::setPixelColor() function). 
+
+  */
+
+  int numSteps = 32; //Number of different colours for the fade to happen over
+
+
+  //Unpack the Color values into bytes (from the ::setPixelColor() function).
   uint8_t
-      r = (uint8_t)(startColour >> 16),
-      g = (uint8_t)(startColour >>  8),
-      b = (uint8_t)startColour;
-  
- uint8_t
-      r1 = (uint8_t)(endColour >> 16),
-      g1 = (uint8_t)(endColour >>  8),
-      b1 = (uint8_t)endColour;
-  
-  r=r+round(((r1-r)/numSteps)*currentStep);  //Overwrite the r, g, b, values with the new ones.
-  g=g+round(((g1-g)/numSteps)*currentStep);
-  b=b+round(((b1-b)/numSteps)*currentStep);
-  Serial.print(r,DEC);
-   Serial.print(", ");
-   Serial.print(g,DEC);
-   Serial.print(", ");
-   Serial.println(b,DEC);
-  
+  r = (uint8_t)(startColour >> 16),
+  g = (uint8_t)(startColour >>  8),
+  b = (uint8_t)startColour;
+
+  uint8_t
+  r1 = (uint8_t)(endColour >> 16),
+  g1 = (uint8_t)(endColour >>  8),
+  b1 = (uint8_t)endColour;
+
+  r = r + round(((r1 - r) / numSteps) * currentStep); //Overwrite the r, g, b, values with the new ones.
+  g = g + round(((g1 - g) / numSteps) * currentStep);
+  b = b + round(((b1 - b) / numSteps) * currentStep);
+  Serial.print(r, DEC);
+  Serial.print(", ");
+  Serial.print(g, DEC);
+  Serial.print(", ");
+  Serial.println(b, DEC);
+
   Serial.println("setColourFade was called");
-  return strip.Color(r,g,b);
+  return strip.Color(r, g, b);
 }
 
 
