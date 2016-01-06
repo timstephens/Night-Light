@@ -20,12 +20,13 @@
 #include <Wire.h>
 #include <RTCx.h>
 
+#define WAKEUPSTEPS 32 //Number of steps in the wakeup fader.
 
 #include "tStruct.h"
 //typedef tStruct timeStruct;
 tStruct currentTime;  //global variable to hold the "current time" (when it was last checked)
 tStruct alarmTime;
-
+int currentStep; //Current position in the fade from start to end colour in the wakeup sequence. 
 
 enum mode {
   runMode,
@@ -104,6 +105,11 @@ void loop() {
   String input;
   tStruct readTime; //a holder space to put time data that's read back from the clock.
 
+  uint32_t startColor, endColor; 
+  startColor = strip.Color(255,0,0);
+  endColor = strip.Color(0,0,255);
+  
+  
   //========================================
   //UI stuff with the serial port
   if (Serial.available()) {
@@ -135,13 +141,16 @@ void loop() {
   //====================================
   //Lighting mode handlers
 
- 
-    //Check that the alarm time hasn't passed
-    readTime = getTimeFromRTC();
 
-    Serial.println(readTime.mins, DEC);
-    Serial.println(currentTime.mins, DEC);
- if (opMode == runMode) {
+  //Check that the alarm time hasn't passed
+  readTime = getTimeFromRTC();
+
+  if (opMode == runMode) {
+    currentStep=0; //Keep resetting this when we're not in alarm mode.
+    
+    strip.setPixelColor(1, startColor);
+      strip.show();
+      
     //if (((currentTime.hours < alarmTime.hours) && (currentTime.mins < alarmTime.mins)) && ((readTime.hours > alarmTime.hours) || (readTime.mins > alarmTime.mins))) {
     if ((readTime.hours == alarmTime.hours) && (readTime.mins == alarmTime.mins)) {
       //Since the last time we checked, the time has passed the alarm time. We should perform wakeup.
@@ -166,9 +175,13 @@ void loop() {
     //For each 20s, increase the brightness by FADETIME(s)/20s
     //setColourFade (startColour, endColour, currentStep);
     */
-    Serial.print("W");
-    
-
+    Serial.print(currentStep, DEC);
+     strip.setPixelColor(1, setColourFade (startColor, endColor, currentStep));
+      strip.show();
+    currentStep +=1; //Advance for next time round
+    if (currentStep > WAKEUPSTEPS) {
+      opMode = runMode; //Go back to runMode again.
+    }
   } else if (opMode == sleepMode) {
     //should be displaying the sleep pattern.
     //Send it again to be sure
@@ -296,7 +309,7 @@ uint32_t setColourFade (uint32_t startColour, uint32_t endColour, int currentSte
 
   */
 
-  int numSteps = 32; //Number of different colours for the fade to happen over
+  int numSteps = WAKEUPSTEPS; //Number of different colours for the fade to happen over
 
 
   //Unpack the Color values into bytes (from the ::setPixelColor() function).
