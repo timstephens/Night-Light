@@ -4,9 +4,21 @@
   Tim Stephens
   31 December 2015
   User interface (and logic for an Arduino powered fading light alarm clock.
-*/
+  
+  NOTE
+  =====
+  
+  This uses the RTCx library, which relies on passing the current Unix time around. 
+  Since the UI here is supposed to be simpler than that and will hide the date from
+  the user, we're going to use a separate time struct for our handling, and pass 
+  values from that around outside the routines that actually check in with the clock 
+  module.
+  
+  */
 #include <Adafruit_NeoPixel.h>
 #include <avr/power.h>
+#include <Wire.h>
+#include <RTCx.h>
 
 
 #include "tStruct.h"
@@ -27,7 +39,24 @@ mode opMode;
 #define NUMPIXELS      4
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
-
+void printTm(Stream &str, struct RTCx::tm *tm)
+{
+  Serial.print(tm->tm_year + 1900);
+  Serial.print('-');
+  Serial.print(tm->tm_mon + 1);
+  Serial.print('-');
+  Serial.print(tm->tm_mday);
+  Serial.print('T');
+  Serial.print(tm->tm_hour);
+  Serial.print(':');
+  Serial.print(tm->tm_min);
+  Serial.print(':');
+  Serial.print(tm->tm_sec);
+  Serial.print(" yday=");
+  Serial.print(tm->tm_yday);
+  Serial.print(" wday=");
+  Serial.println(tm->tm_wday);
+}
 
 void setup() {
   // put your setup code here, to run once:
@@ -36,12 +65,44 @@ void setup() {
     printMenu();
   opMode = runMode;
   strip.begin();
+  Wire.begin();
+   // The address used by the DS1307 is also used by other devices (eg
+  // MCP3424 ADC). Test for a MCP7941x device first.
+  uint8_t addressList[] = {RTCx::MCP7941xAddress,
+			   RTCx::DS1307Address};
+
+  // Autoprobe to find a real-time clock.
+  if (rtc.autoprobe(addressList, sizeof(addressList))) {
+    // Found something, hopefully a clock.
+    Serial.print("Autoprobe found ");
+    switch (rtc.getDevice()) {
+      case RTCx::DS1307:
+	Serial.print("DS1307");
+	break;
+    case RTCx::MCP7941x:
+      Serial.print("MCP7941x");
+      break;
+    default:
+      // Ooops. Must update this example!
+      Serial.print("unknown device");
+      break;
+    }
+    Serial.print(" at 0x");
+    Serial.println(rtc.getAddress(), HEX);
+  }
+  else {
+    // Nothing found at any of the addresses listed.
+    Serial.println("No RTCx found");
+    return;
+  }
+  
+  currentTime = getTimeFromRTC();
 }
 
 void loop() {
   String input;
   tStruct readTime; //a holder space to put time data that's read back from the clock.
-
+    
   //========================================
   //UI stuff with the serial port
   if (Serial.available()) {
@@ -61,14 +122,14 @@ void loop() {
     printMenu();
   }
   
-  strip.setPixelColor(1, strip.Color(255,0,0));
-  strip.show();
-    for(int ii=0; ii<32;ii++) {
-        
-      strip.setPixelColor(1, setColourFade(strip.Color(8,8,0), strip.Color(64,64,0), ii));
-      strip.show();
-      delay(1000);
-    }
+//  strip.setPixelColor(1, strip.Color(255,0,0));
+//  strip.show();
+//    for(int ii=0; ii<32;ii++) {
+//        
+//      strip.setPixelColor(1, setColourFade(strip.Color(8,8,0), strip.Color(64,64,0), ii));
+//      strip.show();
+//      delay(1000);
+//    }
 
   //====================================
   //Lighting mode handlers
@@ -109,18 +170,25 @@ void loop() {
 tStruct getTimeFromRTC() {
   //Get the current time from the i2c RTC
   //Will set the global time variable
- 
- //TODO: Needs actual code in here
- //THIS IS A STUB FOR NOW
- tStruct myTimeStruct;
-
-  myTimeStruct.hours = 11;
-  myTimeStruct.mins = 32;
+  tStruct myTimeStruct;
+  struct RTCx::tm tm;  //From RTCx library, this is a C-style time struct. 
+  rtc.readClock(tm);  //Load the current timestamp into the tm variable
+  printTm(Serial, &tm); //Print the time from the RTC
+  
+  myTimeStruct.hours =  tm.tm_hour;
+  myTimeStruct.mins = tm.tm_min;
+  
+ // Serial.println("getTimeFromRTC");
   return myTimeStruct;
 }
 
 
 void printMenu() {
+  currentTime = getTimeFromRTC();
+  Serial.print(currentTime.hours, DEC);
+  Serial.print(":");
+  Serial.println(currentTime.mins, DEC);
+  
   //Display the menu on tty
   Serial.println("\n1: Set time"); //Add the newline to make the menu more readable
   Serial.println("2: Set Wakeup");
@@ -132,13 +200,20 @@ void printMenu() {
 
 
 void setTime() {
+  struct RTCx::tm tm;  //From RTCx library, this is a C-style time struct. 
   tStruct setTime;
   Serial.println("SET THE TIME");
   setTime = getTimeValue();
-
-  Serial.print("getTime");
+  
+  rtc.readClock(&tm); //Load this to keep the date value etc. in place, and to give us a valid time struct to send back to the RTC (which otherwise will be full of undefined values)
+  tm.tm_hour = setTime.hours;
+  tm.tm_min = setTime.mins;
+  rtc.setClock(tm);
+  Serial.print("The time is ");
   Serial.print(setTime.hours, DEC);
+  Serial.print(":");
   Serial.println(setTime.mins, DEC);
+  
 }
 
 
