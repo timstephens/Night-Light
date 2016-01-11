@@ -19,6 +19,7 @@
 #include <avr/power.h>
 #include <Wire.h>
 #include <RTCx.h>
+#include <EEPROM.h>
 
 #define WAKEUPSTEPS 32 //Number of steps in the wakeup fader.
 
@@ -34,6 +35,8 @@ enum mode {
   wakeupMode
 };
 mode opMode;
+int wakeupAddress = 1;  //Location in the EEPRMOM that will contain the alarm time that's written to it. 
+
 
 #define PIN            7
 // How many NeoPixels are attached to the Arduino?
@@ -60,6 +63,8 @@ void printTm(Stream &str, struct RTCx::tm *tm)
 }
 
 void setup() {
+  int eepromReady;
+  
   // put your setup code here, to run once:
   Serial.begin(9600);
   while (!Serial)
@@ -99,6 +104,18 @@ void setup() {
   }
 
   currentTime = getTimeFromRTC();
+  
+  EEPROM.get(0, eepromReady);  //Check to see whether the first byte of EEPROM contains a magic character (which is written when the alarm is set). 
+  //If it's not the magic byte, this means that the alarm should be set to something before first run. 
+  //This is to stop the case where EEPROM values are undefined and cause the alarm to be set to a deeply inconventient time in the middle of the night. 
+  
+  if (eepromRead == 0b10101010) {
+    eepromRead(alarmTime, wakeupAddress);
+  } else {
+    alarmTime.hours = 7;
+    alarmTime.mins = 0;
+  }
+  
 }
 
 void loop() {
@@ -260,6 +277,9 @@ void setWakeup() {
   Serial.print(alarmTime.hours, DEC);
   Serial.print(":");
   Serial.println(alarmTime.mins, DEC);
+  
+  EEPROM.put(wakeupAddress, alarmTime, ); 
+  EEPROM.put(0, 0b10101010)
   //alarmTime = almTime;
 }
 
