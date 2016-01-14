@@ -54,6 +54,8 @@ int wakeupAddress = 2;  //Location in the EEPRMOM that will contain the alarm ti
 // How many NeoPixels are attached to the Arduino?
 #define NUMPIXELS      1
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
+uint32_t m1[NUMPIXELS];
+uint32_t m2[NUMPIXELS];
 
 void printTm(Stream &str, struct RTCx::tm *tm)
 {
@@ -86,9 +88,10 @@ void setup() {
   Wire.begin();
   // The address used by the DS1307 is also used by other devices (eg
   // MCP3424 ADC). Test for a MCP7941x device first.
-  uint8_t addressList[] = {RTCx::MCP7941xAddress,
-                           RTCx::DS1307Address
-                          };
+  uint8_t addressList[] = {
+      RTCx::MCP7941xAddress,
+      RTCx::DS1307Address
+  };
 
   // Autoprobe to find a real-time clock.
   if (rtc.autoprobe(addressList, sizeof(addressList))) {
@@ -227,7 +230,32 @@ tStruct getTimeFromRTC() {
   return myTimeStruct;
 }
 
-
+void getPixelColour() {
+  String input;
+  int pixel, r, g, b;
+  uint32_t colorReturner;
+  //Get a pixel colour and return it as a Color value thingy into the pixel 
+  Serial.println("Enter Pixel Number");
+  input = Serial.readStringUntil('\n');
+  pixel =input.toInt();
+  Serial.println("Enter Red Value");
+  input =  Serial.readStringUntil('\n');
+  r=input.toInt();
+  
+  Serial.println("Enter Green Value");
+  input = Serial.readStringUntil('\n');
+  g=input.toInt();
+  
+  Serial.println("Enter Blue");
+  input = Serial.readStringUntil('\n');
+  b=input.toInt();
+  
+  colorReturner = strip.Color(r,g,b);
+  pixel = pixel << 24;
+  colorReturner = colorReturner & pixel;
+  //return colorReturner;
+  
+}
 void printMenu() {
   currentTime = getTimeFromRTC();
   Serial.print("Time  ");
