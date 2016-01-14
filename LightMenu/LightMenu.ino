@@ -14,14 +14,26 @@
   values from that around outside the routines that actually check in with the clock
   module.
 
-  */
+
+TODO:
+=====
+
+Add sensible method for alarm wakeup pattern
+Add a way to configure the patterns? 
+Tidy up the code to remove extraneous lines 
+Prevent alarm from firing multiple times during the alarm minute if the fade up is short (i.e. test for rollover of the alarm time, rather than a simple equality test)
+
+
+ */
+ 
+ 
 #include <Adafruit_NeoPixel.h>
 #include <avr/power.h>
 #include <Wire.h>
 #include <RTCx.h>
 #include <EEPROM.h>
 
-#define WAKEUPSTEPS 32 //Number of steps in the wakeup fader.
+#define WAKEUPSTEPS 64 //Number of steps in the wakeup fader.
 
 #include "tStruct.h"
 //typedef tStruct timeStruct;
@@ -35,12 +47,12 @@ enum mode {
   wakeupMode
 };
 mode opMode;
-int wakeupAddress = 1;  //Location in the EEPRMOM that will contain the alarm time that's written to it. 
+int wakeupAddress = 2;  //Location in the EEPRMOM that will contain the alarm time that's written to it. 
 
 
 #define PIN            7
 // How many NeoPixels are attached to the Arduino?
-#define NUMPIXELS      4
+#define NUMPIXELS      1
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
 void printTm(Stream &str, struct RTCx::tm *tm)
@@ -68,7 +80,7 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
   while (!Serial)
-    printMenu();
+    
   opMode = runMode;
   strip.begin();
   Wire.begin();
@@ -109,13 +121,13 @@ void setup() {
   //If it's not the magic byte, this means that the alarm should be set to something before first run. 
   //This is to stop the case where EEPROM values are undefined and cause the alarm to be set to a deeply inconventient time in the middle of the night. 
   
-  if (eepromRead == 0b10101010) {
-    eepromRead(alarmTime, wakeupAddress);
+  if (eepromReady == 0b10101010) {
+    EEPROM.get(wakeupAddress, alarmTime);
   } else {
     alarmTime.hours = 7;
     alarmTime.mins = 0;
   }
-  
+  printMenu();
 }
 
 void loop() {
@@ -145,15 +157,6 @@ void loop() {
     }
     printMenu();
   }
-
-  //  strip.setPixelColor(1, strip.Color(255,0,0));
-  //  strip.show();
-  //    for(int ii=0; ii<32;ii++) {
-  //
-  //      strip.setPixelColor(1, setColourFade(strip.Color(8,8,0), strip.Color(64,64,0), ii));
-  //      strip.show();
-  //      delay(1000);
-  //    }
 
   //====================================
   //Lighting mode handlers
@@ -196,7 +199,8 @@ void loop() {
      strip.setPixelColor(1, setColourFade (startColor, endColor, currentStep));
       strip.show();
     currentStep +=1; //Advance for next time round
-    if (currentStep > WAKEUPSTEPS) {
+    if ((currentStep > WAKEUPSTEPS )) {  // && ((readTime.hours != alarmTime.hours) && (readTime.mins != alarmTime.mins))) {
+     //      This should make sure that the alarm only fires once since this code should only fire once the time isn't equal to the alarm minute...
       opMode = runMode; //Go back to runMode again.
     }
   } else if (opMode == sleepMode) {
@@ -278,8 +282,8 @@ void setWakeup() {
   Serial.print(":");
   Serial.println(alarmTime.mins, DEC);
   
-  EEPROM.put(wakeupAddress, alarmTime, ); 
-  EEPROM.put(0, 0b10101010)
+  EEPROM.put(wakeupAddress, alarmTime ); 
+  EEPROM.put(0, 0b10101010);
   //alarmTime = almTime;
 }
 
