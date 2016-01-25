@@ -199,9 +199,6 @@ void loop() {
   if (opMode == runMode) {
     currentStep = 0; //Keep resetting this when we're not in alarm mode.
 
-    strip.setPixelColor(1, startColor);
-    strip.show();
-
     //if (((currentTime.hours < alarmTime.hours) && (currentTime.mins < alarmTime.mins)) && ((readTime.hours > alarmTime.hours) || (readTime.mins > alarmTime.mins))) {
     if ((readTime.hours == alarmTime.hours) && (readTime.mins == alarmTime.mins)) {
       //Since the last time we checked, the time has passed the alarm time. We should perform wakeup.
@@ -227,7 +224,9 @@ void loop() {
     //setColourFade (startColour, endColour, currentStep);
     */
     Serial.print(currentStep, DEC);
-    strip.setPixelColor(1, setColourFade (startColor, endColor, currentStep));
+    for (int i = 0; i < NUMPIXELS; i++) {
+      strip.setPixelColor(i, setColourFade (m1[i], m2[i], currentStep));
+    }
     strip.show();
     currentStep += 1; //Advance for next time round
     if ((currentStep > WAKEUPSTEPS )) {  // && ((readTime.hours != alarmTime.hours) && (readTime.mins != alarmTime.mins))) {
@@ -237,8 +236,17 @@ void loop() {
   } else if (opMode == sleepMode) {
     //should be displaying the sleep pattern.
     //Send it again to be sure
+    for (int i = 0; i < NUMPIXELS; i++) {
+      strip.setPixelColor(i,  m1[i]);
+    }
+        strip.show();
   }
+  
   delay(1000);  //prevent racing
+}
+
+void setPatternToStrip(uint32_t pattern[]) {
+
 }
 
 tStruct getTimeFromRTC() {
@@ -346,10 +354,10 @@ void setWakeup() {
   Serial.println("SET THE WAKEUP TIME");
   alarmTime = getTimeValue();
 
-  Serial.print("almTime");
-  Serial.print(alarmTime.hours, DEC);
-  Serial.print(":");
-  Serial.println(alarmTime.mins, DEC);
+  //  Serial.print("almTime");
+  //  Serial.print(alarmTime.hours, DEC);
+  //  Serial.print(":");
+  //  Serial.println(alarmTime.mins, DEC);
 
   EEPROM.put(wakeupAddress, alarmTime );
   EEPROM.put(0, 0b10101010);
@@ -370,11 +378,11 @@ tStruct getTimeValue() {
 
     myTimeStruct.hours = time.substring(0, 2).toInt();
     myTimeStruct.mins = time.substring(2, 4).toInt();
-//    Serial.print(time);
-//    Serial.print(" -> ");
-//    Serial.print(myTimeStruct.hours, DEC);
-//    Serial.print(":");
-//    Serial.println(myTimeStruct.mins, DEC);
+    //    Serial.print(time);
+    //    Serial.print(" -> ");
+    //    Serial.print(myTimeStruct.hours, DEC);
+    //    Serial.print(":");
+    //    Serial.println(myTimeStruct.mins, DEC);
   }
   Serial.setTimeout(1000); //Allow 10s to set the time
 
@@ -441,8 +449,8 @@ int saveSettings() {
   }
   for (int i = 0; i < NUMPIXELS; i++) {
     EEPROM.put(M2ADDR + (4 * i), m2[i]);
-    
-  } 
+
+  }
   return 1;
 }
 
