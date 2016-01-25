@@ -19,14 +19,14 @@ TODO:
 =====
 
 Add sensible method for alarm wakeup pattern
-Add a way to configure the patterns? 
-Tidy up the code to remove extraneous lines 
+Add a way to configure the patterns?
+Tidy up the code to remove extraneous lines
 Prevent alarm from firing multiple times during the alarm minute if the fade up is short (i.e. test for rollover of the alarm time, rather than a simple equality test)
 
 
  */
- 
- 
+
+
 #include <Adafruit_NeoPixel.h>
 #include <avr/power.h>
 #include <Wire.h>
@@ -39,7 +39,9 @@ Prevent alarm from firing multiple times during the alarm minute if the fade up 
 //typedef tStruct timeStruct;
 tStruct currentTime;  //global variable to hold the "current time" (when it was last checked)
 tStruct alarmTime;
-int currentStep; //Current position in the fade from start to end colour in the wakeup sequence. 
+int currentStep; //Current position in the fade from start to end colour in the wakeup sequence.
+
+
 
 enum mode {
   runMode,
@@ -47,14 +49,17 @@ enum mode {
   wakeupMode
 };
 mode opMode;
-int wakeupAddress = 2;  //Location in the EEPRMOM that will contain the alarm time that's written to it. 
+int wakeupAddress = 2;  //Location in the EEPRMOM that will contain the alarm time that's written to it.
 
 
 #define PIN            7
 // How many NeoPixels are attached to the Arduino?
-#define NUMPIXELS      1
+#define NUMPIXELS      4
+#define M1ADDR  16
+#define M2ADDR  (4*NUMPIXELS)+M1ADDR  //Location for the two array locations in EEPROM. Note that each pattern array is in 32b format for each element. 
+
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
-uint32_t m1[NUMPIXELS];
+uint32_t m1[NUMPIXELS]; //Globals to hold the two different fade patterns.
 uint32_t m2[NUMPIXELS];
 
 void printTm(Stream &str, struct RTCx::tm *tm)
@@ -78,19 +83,19 @@ void printTm(Stream &str, struct RTCx::tm *tm)
 
 void setup() {
   int eepromReady;
-  
+
   // put your setup code here, to run once:
   Serial.begin(9600);
   while (!Serial)
-    
-  opMode = runMode;
+
+    opMode = runMode;
   strip.begin();
   Wire.begin();
   // The address used by the DS1307 is also used by other devices (eg
   // MCP3424 ADC). Test for a MCP7941x device first.
   uint8_t addressList[] = {
-      RTCx::MCP7941xAddress,
-      RTCx::DS1307Address
+    RTCx::MCP7941xAddress,
+    RTCx::DS1307Address
   };
 
   // Autoprobe to find a real-time clock.
@@ -119,29 +124,36 @@ void setup() {
   }
 
   currentTime = getTimeFromRTC();
-  
-  EEPROM.get(0, eepromReady);  //Check to see whether the first byte of EEPROM contains a magic character (which is written when the alarm is set). 
-  //If it's not the magic byte, this means that the alarm should be set to something before first run. 
-  //This is to stop the case where EEPROM values are undefined and cause the alarm to be set to a deeply inconventient time in the middle of the night. 
-  
+
+  EEPROM.get(0, eepromReady);  //Check to see whether the first byte of EEPROM contains a magic character (which is written when the alarm is set).
+  //If it's not the magic byte, this means that the alarm should be set to something before first run.
+  //This is to stop the case where EEPROM values are undefined and cause the alarm to be set to a deeply inconventient time in the middle of the night.
+
   if (eepromReady == 0b10101010) {
     EEPROM.get(wakeupAddress, alarmTime);
   } else {
     alarmTime.hours = 7;
     alarmTime.mins = 0;
   }
+
+
+  //Read the alarm patterns into RAM
+  EEPROM.get(M1ADDR, m1);
+  EEPROM.get(M2ADDR, m2);
+
   printMenu();
 }
 
+//==============================================================================================================================
 void loop() {
   String input;
   tStruct readTime; //a holder space to put time data that's read back from the clock.
 
-  uint32_t startColor, endColor; 
-  startColor = strip.Color(255,0,0);
-  endColor = strip.Color(0,0,255);
-  
-  
+  uint32_t startColor, endColor;
+  startColor = strip.Color(255, 0, 0);
+  endColor = strip.Color(0, 0, 255);
+
+
   //========================================
   //UI stuff with the serial port
   if (Serial.available()) {
@@ -155,8 +167,24 @@ void loop() {
       setTime();
     } else if (input.charAt(0) == '2') {
       setWakeup();
+    } else if (input.charAt(0) == '3') {
+      getPixelColour(m1);
+    } else if (input.charAt(0) == '4') {
+      getPixelColour(m2);
+    }  else if (  input.charAt(0) == '5') {
+      if (saveSettings()) { //write the globals to the EEPROM
+        Serial.println("Settings saved OK");
+      } else {
+        Serial.println("ERROR. Settings not saved");
+      }
+    } else if (  input.charAt(0) == '6') {
+      for (int i = 0; i < ( (M2ADDR + (4 * NUMPIXELS))); i++) {
+        Serial.print(i, DEC);
+        Serial.print(" ");
+        Serial.println(EEPROM.read(i), DEC);
+      }
     } else {
-      Serial.println("Something \n");
+      Serial.println("Command not recognised");
     }
     printMenu();
   }
@@ -169,11 +197,11 @@ void loop() {
   readTime = getTimeFromRTC();
 
   if (opMode == runMode) {
-    currentStep=0; //Keep resetting this when we're not in alarm mode.
-    
+    currentStep = 0; //Keep resetting this when we're not in alarm mode.
+
     strip.setPixelColor(1, startColor);
-      strip.show();
-      
+    strip.show();
+
     //if (((currentTime.hours < alarmTime.hours) && (currentTime.mins < alarmTime.mins)) && ((readTime.hours > alarmTime.hours) || (readTime.mins > alarmTime.mins))) {
     if ((readTime.hours == alarmTime.hours) && (readTime.mins == alarmTime.mins)) {
       //Since the last time we checked, the time has passed the alarm time. We should perform wakeup.
@@ -199,19 +227,17 @@ void loop() {
     //setColourFade (startColour, endColour, currentStep);
     */
     Serial.print(currentStep, DEC);
-     strip.setPixelColor(1, setColourFade (startColor, endColor, currentStep));
-      strip.show();
-    currentStep +=1; //Advance for next time round
+    strip.setPixelColor(1, setColourFade (startColor, endColor, currentStep));
+    strip.show();
+    currentStep += 1; //Advance for next time round
     if ((currentStep > WAKEUPSTEPS )) {  // && ((readTime.hours != alarmTime.hours) && (readTime.mins != alarmTime.mins))) {
-     //      This should make sure that the alarm only fires once since this code should only fire once the time isn't equal to the alarm minute...
+      //      This should make sure that the alarm only fires once since this code should only fire once the time isn't equal to the alarm minute...
       opMode = runMode; //Go back to runMode again.
     }
   } else if (opMode == sleepMode) {
     //should be displaying the sleep pattern.
     //Send it again to be sure
   }
-
-
   delay(1000);  //prevent racing
 }
 
@@ -221,7 +247,7 @@ tStruct getTimeFromRTC() {
   tStruct myTimeStruct;
   struct RTCx::tm tm;  //From RTCx library, this is a C-style time struct.
   rtc.readClock(tm);  //Load the current timestamp into the tm variable
-  printTm(Serial, &tm); //Print the time from the RTC
+  //printTm(Serial, &tm); //Print the time from the RTC
 
   myTimeStruct.hours =  tm.tm_hour;
   myTimeStruct.mins = tm.tm_min;
@@ -230,31 +256,45 @@ tStruct getTimeFromRTC() {
   return myTimeStruct;
 }
 
-void getPixelColour() {
+void getPixelColour(uint32_t pattern[]) {
+
+  /*
+  The idea in this function is that we're passed in the reference to an arbitrary array of memory (this is in order to make the coding more generic than hard-coding in the one or two patterns that we could have)
+  The code then gets the RGB vlaues for a particular pixel, and then sets it in the global.
+  Arrays are always passed by reference in C++, so this makes things a little bit easier.
+
+  The patterns are going to be stored in the EEPROM, so we'll make sure to write them to the chip once the setting process has happened.
+
+  //*/
+
   String input;
   int pixel, r, g, b;
-  uint32_t colorReturner;
-  //Get a pixel colour and return it as a Color value thingy into the pixel 
+  // uint32_t colorReturner;
+  //Get a pixel colour and return it as a Color value thingy into the pixel
+  Serial.setTimeout(10000); //Allow 10s to set the time
+
   Serial.println("Enter Pixel Number");
   input = Serial.readStringUntil('\n');
-  pixel =input.toInt();
+  pixel = input.toInt();
+  Serial.println(pixel, DEC);
+
   Serial.println("Enter Red Value");
   input =  Serial.readStringUntil('\n');
-  r=input.toInt();
-  
+  r = input.toInt();
+  Serial.println(r, DEC);
   Serial.println("Enter Green Value");
   input = Serial.readStringUntil('\n');
-  g=input.toInt();
-  
+  g = input.toInt();
+  Serial.println(g, DEC);
+
   Serial.println("Enter Blue");
   input = Serial.readStringUntil('\n');
-  b=input.toInt();
-  
-  colorReturner = strip.Color(r,g,b);
-  pixel = pixel << 24;
-  colorReturner = colorReturner & pixel;
-  //return colorReturner;
-  
+  b = input.toInt();
+  Serial.println(b, DEC);
+
+  pattern[pixel] =  strip.Color(r, g, b);
+  Serial.setTimeout(1000); //Allow 10s to set the time
+
 }
 void printMenu() {
   currentTime = getTimeFromRTC();
@@ -270,9 +310,10 @@ void printMenu() {
   //Display the menu on tty
   Serial.println("\n1: Set time"); //Add the newline to make the menu more readable
   Serial.println("2: Set Wakeup");
-  Serial.println("3: Set M1");
-  Serial.println("4: Set M2");
-  Serial.println("M3 is always Rainbow");
+  Serial.println("3: Set Wakeup pattern");
+  Serial.println("4: Set Sleep pattern");
+  Serial.println("5: Save patterns to EEPROM");
+  Serial.println("6: Read EEPROM");
 
 }
 
@@ -309,8 +350,8 @@ void setWakeup() {
   Serial.print(alarmTime.hours, DEC);
   Serial.print(":");
   Serial.println(alarmTime.mins, DEC);
-  
-  EEPROM.put(wakeupAddress, alarmTime ); 
+
+  EEPROM.put(wakeupAddress, alarmTime );
   EEPROM.put(0, 0b10101010);
   //alarmTime = almTime;
 }
@@ -320,7 +361,7 @@ tStruct getTimeValue() {
   String time;
   tStruct myTimeStruct;
   int hours, mins;
-  Serial.setTimeout(5000); //Allow 10s to set the time
+  Serial.setTimeout(10000); //Allow 10s to set the time
   Serial.println("Enter the time hhmm");
   time = Serial.readStringUntil('\n');
   if (time.length() < 4) {
@@ -329,12 +370,14 @@ tStruct getTimeValue() {
 
     myTimeStruct.hours = time.substring(0, 2).toInt();
     myTimeStruct.mins = time.substring(2, 4).toInt();
-    Serial.print(time);
-    Serial.print(" -> ");
-    Serial.print(myTimeStruct.hours, DEC);
-    Serial.print(":");
-    Serial.println(myTimeStruct.mins, DEC);
+//    Serial.print(time);
+//    Serial.print(" -> ");
+//    Serial.print(myTimeStruct.hours, DEC);
+//    Serial.print(":");
+//    Serial.println(myTimeStruct.mins, DEC);
   }
+  Serial.setTimeout(1000); //Allow 10s to set the time
+
   return myTimeStruct;
 }
 
@@ -386,6 +429,21 @@ uint32_t setColourFade (uint32_t startColour, uint32_t endColour, int currentSte
 
   Serial.println("setColourFade was called");
   return strip.Color(r, g, b);
+}
+
+int saveSettings() {
+  //Write the M1, M2 values to the EEPROM
+  //This is implemented as a separate thing, rather than doing it each time to preserve the lifetime of the EEPROM in the Arduino.
+  //In reality, this may be overkill and we'll just end up overwriting it each time. Let's see.
+
+  for (int i = 0; i < NUMPIXELS; i++) {
+    EEPROM.put(M1ADDR + (4 * i), m1[i]);
+  }
+  for (int i = 0; i < NUMPIXELS; i++) {
+    EEPROM.put(M2ADDR + (4 * i), m2[i]);
+    
+  } 
+  return 1;
 }
 
 
