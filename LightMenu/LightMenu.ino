@@ -19,12 +19,15 @@ TODO:
 =====
 
 Add sensible method for alarm wakeup pattern
-Add a way to configure the patterns?
-Tidy up the code to remove extraneous lines
-Prevent alarm from firing multiple times during the alarm minute if the fade up is short (i.e. test for rollover of the alarm time, rather than a simple equality test)
+Add a way to configure the patterns? @DONE
+Tidy up the code to remove extraneous lines @DONE
+Prevent alarm from firing multiple times during the alarm minute if the fade up is short (i.e. test for rollover of the alarm time, rather than a simple equality test) @DONE
+Add a way to use switches to fade lamp up and down
+Add a way to select the mode that the lamp is in (perhaps using the same switches in a sensible way).
+Add a Sleep to the code so that the microcontroller isn't spinning away consuming power the whole time.
 
 
- */
+*/
 
 
 #include <Adafruit_NeoPixel.h>
@@ -32,14 +35,34 @@ Prevent alarm from firing multiple times during the alarm minute if the fade up 
 #include <Wire.h>
 #include <RTCx.h>
 #include <EEPROM.h>
+#include "tStruct.h"
+
+
 
 #define WAKEUPSTEPS 64 //Number of steps in the wakeup fader.
+#define PIN            7
+// How many NeoPixels are attached to the Arduino?
+#define NUMPIXELS      4
+#define M1ADDR  16
+#define M2ADDR  (4*NUMPIXELS)+M1ADDR  //Location for the two array locations in EEPROM. Note that each pattern array is in 32b format for each element. 
 
-#include "tStruct.h"
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
+uint32_t m1[NUMPIXELS]; //Globals to hold the two different fade patterns.
+uint32_t m2[NUMPIXELS];
+
+const int upButton = 2;
+const int downButton = 3;
+const int armSwitch = 4; //This is an on/off switch that determines whether the alarm is armed or not...
+
 //typedef tStruct timeStruct;
 tStruct currentTime;  //global variable to hold the "current time" (when it was last checked)
 tStruct alarmTime;
-int currentStep; //Current position in the fade from start to end colour in the wakeup sequence.
+int gBrightness; //Current position in the fade from start to end colour in the wakeup sequence.
+/*
+gBrightness = 0 will set the strip to it's 'off' colour, which isn't necessarily actually off; it's just the values that are stored in m1
+gBrightness = WAKEUPSTEPS will set the strip to its 'on' colour, which is the values that are stored in m2
+*/
+
 
 
 
@@ -52,15 +75,6 @@ mode opMode;
 int wakeupAddress = 2;  //Location in the EEPRMOM that will contain the alarm time that's written to it.
 
 
-#define PIN            7
-// How many NeoPixels are attached to the Arduino?
-#define NUMPIXELS      4
-#define M1ADDR  16
-#define M2ADDR  (4*NUMPIXELS)+M1ADDR  //Location for the two array locations in EEPROM. Note that each pattern array is in 32b format for each element. 
-
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
-uint32_t m1[NUMPIXELS]; //Globals to hold the two different fade patterns.
-uint32_t m2[NUMPIXELS];
 
 void printTm(Stream &str, struct RTCx::tm *tm)
 {
@@ -142,6 +156,15 @@ void setup() {
   EEPROM.get(M2ADDR, m2);
 
   printMenu();
+
+
+  gBrightness = 0; //Default to off when the system first starts up.
+
+  pinMode(upButton, INPUT_PULLUP);
+  pinMode(downButton, INPUT_PULLUP);
+  //Handle the pressing of the buttons.
+  attachInterrupt(upButton, handleUpButton, LOW);
+  attachInterrupt(downButton, handleDownButton, LOW);
 }
 
 //==============================================================================================================================
@@ -149,9 +172,6 @@ void loop() {
   String input;
   tStruct readTime; //a holder space to put time data that's read back from the clock.
 
-  uint32_t startColor, endColor;
-  startColor = strip.Color(255, 0, 0);
-  endColor = strip.Color(0, 0, 255);
 
 
   //========================================
@@ -171,7 +191,7 @@ void loop() {
       getPixelColour(m1);
     } else if (input.charAt(0) == '4') {
       getPixelColour(m2);
-    }  else if (  input.charAt(0) == '5') {
+    }  else if (input.charAt(0) == '5') {
       if (saveSettings()) { //write the globals to the EEPROM
         Serial.println("Settings saved OK");
       } else {
@@ -189,6 +209,18 @@ void loop() {
     printMenu();
   }
 
+
+  //WAKEUPSTEPS are used as the quanta of fading brightnesses in the current fade-up routine. Also will use them for the manual fading settings.
+  if (gBrightness < 0) {
+    gBrightness = 0;
+    opMode = runMode;  //How to get the thing into sleep mode
+  }
+
+  if (gBrightness > WAKEUPSTEPS) {
+    gBrightness = WAKEUPSTEPS;
+  }
+
+
   //====================================
   //Lighting mode handlers
 
@@ -197,8 +229,6 @@ void loop() {
   readTime = getTimeFromRTC();
 
   if (opMode == runMode) {
-    currentStep = 0; //Keep resetting this when we're not in alarm mode.
-
     //if (((currentTime.hours < alarmTime.hours) && (currentTime.mins < alarmTime.mins)) && ((readTime.hours > alarmTime.hours) || (readTime.mins > alarmTime.mins))) {
     if ((readTime.hours == alarmTime.hours) && (readTime.mins == alarmTime.mins)) {
       //Since the last time we checked, the time has passed the alarm time. We should perform wakeup.
@@ -206,7 +236,6 @@ void loop() {
       Serial.println("***********************");
       Serial.println("******* ALARM *********");
       Serial.println("***********************");
-
     }
 
     currentTime = readTime; //Advance the stored time value to the 'current time' for the next time we check.
@@ -223,30 +252,46 @@ void loop() {
     //For each 20s, increase the brightness by FADETIME(s)/20s
     //setColourFade (startColour, endColour, currentStep);
     */
-    Serial.print(currentStep, DEC);
-    for (int i = 0; i < NUMPIXELS; i++) {
-      strip.setPixelColor(i, setColourFade (m1[i], m2[i], currentStep));
-    }
-    strip.show();
-    currentStep += 1; //Advance for next time round
-    if ((currentStep > WAKEUPSTEPS )) {  // && ((readTime.hours != alarmTime.hours) && (readTime.mins != alarmTime.mins))) {
+    setStripColour();
+    gBrightness += 1; //Advance for next time round
+    if ((gBrightness > WAKEUPSTEPS )) {  // && ((readTime.hours != alarmTime.hours) && (readTime.mins != alarmTime.mins))) {
       //      This should make sure that the alarm only fires once since this code should only fire once the time isn't equal to the alarm minute...
       opMode = runMode; //Go back to runMode again.
     }
   } else if (opMode == sleepMode) {
     //should be displaying the sleep pattern.
     //Send it again to be sure
-    for (int i = 0; i < NUMPIXELS; i++) {
-      strip.setPixelColor(i,  m1[i]);
-    }
-        strip.show();
+    gBrightness = 0;  //Note that gBrightness = 0 does not necessarily mean that the strip is off. If the off pattern is non-zero, you'll get light here.
+    setStripColour();
+
   }
-  
+
   delay(1000);  //prevent racing
 }
 
-void setPatternToStrip(uint32_t pattern[]) {
+void handleUpButton() {
+  //Handle the interrupt that's fired by the upButton being pressed.
+  //This is going to set the value of the global brightness to something other than the current value
+  gBrightness += 1;
+  
+  //Switch to runMode (i.e. armed for an alarm).
+  //runMode tests to see whether an alarm should be fired, so the logic path if the switch is off is to enter runMode, discover the switch is off, and  then exit runMode for sleep mode
+   opMode = runMode;
+}
 
+void handleDownButton() {
+  opMode = runMode;
+  gBrightness -= 1;
+}
+
+void setStripColour() {
+  //A single place to set the colours of all the pixels in a loop from the various places that they could be set...
+
+  Serial.print(gBrightness, DEC);
+  for (int i = 0; i < NUMPIXELS; i++) {
+    strip.setPixelColor(i, setColourFade (m1[i], m2[i], gBrightness));
+  }
+  strip.show();
 }
 
 tStruct getTimeFromRTC() {
@@ -263,6 +308,10 @@ tStruct getTimeFromRTC() {
   // Serial.println("getTimeFromRTC");
   return myTimeStruct;
 }
+
+
+//=================================
+// GET PIXEL COLOUR
 
 void getPixelColour(uint32_t pattern[]) {
 
@@ -304,6 +353,11 @@ void getPixelColour(uint32_t pattern[]) {
   Serial.setTimeout(1000); //Allow 10s to set the time
 
 }
+
+
+//=================================
+// PRINTMENU
+
 void printMenu() {
   currentTime = getTimeFromRTC();
   Serial.print("Time  ");
@@ -426,16 +480,18 @@ uint32_t setColourFade (uint32_t startColour, uint32_t endColour, int currentSte
   g1 = (uint8_t)(endColour >>  8),
   b1 = (uint8_t)endColour;
 
+  //TODO Logic fail here that means that either the maths is wrong, or the uint nature of these variables is losing the precision required. Cast to float?
   r = r + round(((r1 - r) / numSteps) * currentStep); //Overwrite the r, g, b, values with the new ones.
   g = g + round(((g1 - g) / numSteps) * currentStep);
   b = b + round(((b1 - b) / numSteps) * currentStep);
+  Serial.print(":");
   Serial.print(r, DEC);
   Serial.print(", ");
   Serial.print(g, DEC);
   Serial.print(", ");
   Serial.println(b, DEC);
 
-  Serial.println("setColourFade was called");
+  //  Serial.println("setColourFade was called");
   return strip.Color(r, g, b);
 }
 
