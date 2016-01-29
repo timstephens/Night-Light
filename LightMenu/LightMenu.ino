@@ -22,7 +22,7 @@ Add sensible method for alarm wakeup pattern
 Add a way to configure the patterns? @DONE
 Tidy up the code to remove extraneous lines @DONE
 Prevent alarm from firing multiple times during the alarm minute if the fade up is short (i.e. test for rollover of the alarm time, rather than a simple equality test) @DONE
-Add a way to use switches to fade lamp up and down
+Add a way to use switches to fade lamp up and down @done(?)
 Add a way to select the mode that the lamp is in (perhaps using the same switches in a sensible way).
 Add a Sleep to the code so that the microcontroller isn't spinning away consuming power the whole time.
 
@@ -163,8 +163,8 @@ void setup() {
   pinMode(upButton, INPUT_PULLUP);
   pinMode(downButton, INPUT_PULLUP);
   //Handle the pressing of the buttons.
-  attachInterrupt(upButton, handleUpButton, LOW);
-  attachInterrupt(downButton, handleDownButton, LOW);
+//  attachInterrupt(upButton, handleUpButton, RISING);
+//  attachInterrupt(downButton, handleDownButton, RISING);
 }
 
 //==============================================================================================================================
@@ -227,12 +227,16 @@ void loop() {
 
   //Check that the alarm time hasn't passed
   readTime = getTimeFromRTC();
+  Serial.print("Brightness = ");
+  Serial.println(gBrightness, DEC);
+
 
   if (opMode == runMode) {
     //if (((currentTime.hours < alarmTime.hours) && (currentTime.mins < alarmTime.mins)) && ((readTime.hours > alarmTime.hours) || (readTime.mins > alarmTime.mins))) {
     if ((readTime.hours == alarmTime.hours) && (readTime.mins == alarmTime.mins)) {
       //Since the last time we checked, the time has passed the alarm time. We should perform wakeup.
       opMode = wakeupMode;
+      Serial.println("->wakeupMode");
       Serial.println("***********************");
       Serial.println("******* ALARM *********");
       Serial.println("***********************");
@@ -252,19 +256,19 @@ void loop() {
     //For each 20s, increase the brightness by FADETIME(s)/20s
     //setColourFade (startColour, endColour, currentStep);
     */
-    setStripColour();
     gBrightness += 1; //Advance for next time round
     if ((gBrightness > WAKEUPSTEPS )) {  // && ((readTime.hours != alarmTime.hours) && (readTime.mins != alarmTime.mins))) {
       //      This should make sure that the alarm only fires once since this code should only fire once the time isn't equal to the alarm minute...
       opMode = runMode; //Go back to runMode again.
+      Serial.println("->runMode");
     }
   } else if (opMode == sleepMode) {
     //should be displaying the sleep pattern.
     //Send it again to be sure
     gBrightness = 0;  //Note that gBrightness = 0 does not necessarily mean that the strip is off. If the off pattern is non-zero, you'll get light here.
-    setStripColour();
 
   }
+  setStripColour();
 
   delay(1000);  //prevent racing
 }
@@ -273,21 +277,22 @@ void handleUpButton() {
   //Handle the interrupt that's fired by the upButton being pressed.
   //This is going to set the value of the global brightness to something other than the current value
   gBrightness += 1;
-  
+
   //Switch to runMode (i.e. armed for an alarm).
   //runMode tests to see whether an alarm should be fired, so the logic path if the switch is off is to enter runMode, discover the switch is off, and  then exit runMode for sleep mode
-   opMode = runMode;
+  opMode = runMode;
+  Serial.println("->runMode");
 }
 
 void handleDownButton() {
-  opMode = runMode;
+  //opMode = runMode;
   gBrightness -= 1;
 }
 
 void setStripColour() {
   //A single place to set the colours of all the pixels in a loop from the various places that they could be set...
-
-  Serial.print(gBrightness, DEC);
+  Serial.print("setStripColour brightness=");
+  Serial.println(gBrightness, DEC);
   for (int i = 0; i < NUMPIXELS; i++) {
     strip.setPixelColor(i, setColourFade (m1[i], m2[i], gBrightness));
   }
@@ -480,8 +485,11 @@ uint32_t setColourFade (uint32_t startColour, uint32_t endColour, int currentSte
   g1 = (uint8_t)(endColour >>  8),
   b1 = (uint8_t)endColour;
 
-  //TODO Logic fail here that means that either the maths is wrong, or the uint nature of these variables is losing the precision required. Cast to float?
-  r = r + round(((r1 - r) / numSteps) * currentStep); //Overwrite the r, g, b, values with the new ones.
+  //TODO Logic fail here 
+  //What's happening, I think is that the code is using the current strip value as r, so it approaches the correct value, but as the values converge, the different decreases and the change doesn't work properly. 
+  //Need to think of a better way to get this to behave. 
+  
+  r = (int)r + round((((int)r1 - (int)r) / numSteps) * currentStep); //Overwrite the r, g, b, values with the new ones.
   g = g + round(((g1 - g) / numSteps) * currentStep);
   b = b + round(((b1 - b) / numSteps) * currentStep);
   Serial.print(":");
