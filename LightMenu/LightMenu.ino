@@ -163,8 +163,8 @@ void setup() {
   pinMode(upButton, INPUT_PULLUP);
   pinMode(downButton, INPUT_PULLUP);
   //Handle the pressing of the buttons.
-//  attachInterrupt(upButton, handleUpButton, RISING);
-//  attachInterrupt(downButton, handleDownButton, RISING);
+  //  attachInterrupt(upButton, handleUpButton, RISING);
+  //  attachInterrupt(downButton, handleDownButton, RISING);
 }
 
 //==============================================================================================================================
@@ -210,16 +210,7 @@ void loop() {
   }
 
 
-  //WAKEUPSTEPS are used as the quanta of fading brightnesses in the current fade-up routine. Also will use them for the manual fading settings.
-  if (gBrightness < 0) {
-    gBrightness = 0;
-    opMode = runMode;  //How to get the thing into sleep mode
-  }
-
-  if (gBrightness > WAKEUPSTEPS) {
-    gBrightness = WAKEUPSTEPS;
-  }
-
+ 
 
   //====================================
   //Lighting mode handlers
@@ -268,6 +259,19 @@ void loop() {
     gBrightness = 0;  //Note that gBrightness = 0 does not necessarily mean that the strip is off. If the off pattern is non-zero, you'll get light here.
 
   }
+  
+  
+   //WAKEUPSTEPS are used as the quanta of fading brightnesses in the current fade-up routine. Also will use them for the manual fading settings.
+  if (gBrightness < 0) {
+    gBrightness = 0;
+    opMode = runMode;  //How to get the thing into sleep mode
+  }
+
+  if (gBrightness > WAKEUPSTEPS) {
+    gBrightness = WAKEUPSTEPS;
+  }
+
+
   setStripColour();
 
   delay(1000);  //prevent racing
@@ -465,13 +469,15 @@ uint32_t setColourFade (uint32_t startColour, uint32_t endColour, int currentSte
   ALGORITHM
 
   Unpack start and end colour into separate RGB members (as Uint8s)
-  Calculate colour step for RGB values round((start-end)/numSteps) (note that this may be negative value)
+  Calculate colour step for RGB values round((start-end)/WAKEUPSTEPS) (note that this may be negative value)
   Assuming N steps, calculate the RGB values to return by multiplying colour step by current step number.
-
+  There's a bug/issue with the logic here that causes the final value to be incorrect by a few; it's caused by the loss of precision and rounding that's going on.
+  - We'll get around it for now by checking whether currentStep == WAKEUPSTEPS (the max value) and if it is, we'll just return the pattern for the max value. This will cause a slightly larger jump at the end of a fade, but since there are 64 (or more) steps, it's equal to a difference of ~1.5% in LED brightness, which I suspect is not obvious.
 
   */
 
-  int numSteps = WAKEUPSTEPS; //Number of different colours for the fade to happen over
+  // WAKEUPSTEPS = Number of different colours for the fade to happen over
+
 
 
   //Unpack the Color values into bytes (from the ::setPixelColor() function).
@@ -484,20 +490,29 @@ uint32_t setColourFade (uint32_t startColour, uint32_t endColour, int currentSte
   r1 = (uint8_t)(endColour >> 16),
   g1 = (uint8_t)(endColour >>  8),
   b1 = (uint8_t)endColour;
+  if (currentStep == WAKEUPSTEPS) {
+    r = r1; //If we're at the max value, of brightness, just return the pattern for the max value.
+    g = g1;
+    b = b1;
+  } else {
+    //TODO Logic fail here
+    //What's happening, I think is that the code is using the current strip value as r, so it approaches the correct value, but as the values converge, the different decreases and the change doesn't work properly.
+    //Need to think of a better way to get this to behave.
 
-  //TODO Logic fail here 
-  //What's happening, I think is that the code is using the current strip value as r, so it approaches the correct value, but as the values converge, the different decreases and the change doesn't work properly. 
-  //Need to think of a better way to get this to behave. 
+
+// WHAT'S happening is that the stepsize (r1-r)/WAKEUPSTEPS is in the range 1-5, depending on the values in the pattern, so if the fade goes downwards (i.e. to darker values), the minium valu9e that you can have is 64 (i.e. 64*1), which is obviously not correct.
+// Need a more robust algorithm here. 
+    r = (int)r + round((((int)r1 - (int)r) / WAKEUPSTEPS) * currentStep); //Overwrite the r, g, b, values with the new ones.
+    g = g + round(((g1 - g) / WAKEUPSTEPS) * currentStep);
+    b = b + round(((b1 - b) / WAKEUPSTEPS) * currentStep);
+  }
+    Serial.print(":");
+    Serial.print(r, DEC);
+    Serial.print(", ");
+    Serial.print(g, DEC);
+    Serial.print(", ");
+    Serial.println(b, DEC);
   
-  r = (int)r + round((((int)r1 - (int)r) / numSteps) * currentStep); //Overwrite the r, g, b, values with the new ones.
-  g = g + round(((g1 - g) / numSteps) * currentStep);
-  b = b + round(((b1 - b) / numSteps) * currentStep);
-  Serial.print(":");
-  Serial.print(r, DEC);
-  Serial.print(", ");
-  Serial.print(g, DEC);
-  Serial.print(", ");
-  Serial.println(b, DEC);
 
   //  Serial.println("setColourFade was called");
   return strip.Color(r, g, b);
