@@ -39,6 +39,7 @@ Add a Sleep to the code so that the microcontroller isn't spinning away consumin
 
 
 
+
 #define WAKEUPSTEPS 64 //Number of steps in the wakeup fader.
 #define PIN            7
 // How many NeoPixels are attached to the Arduino?
@@ -57,12 +58,12 @@ const int armSwitch = 4; //This is an on/off switch that determines whether the 
 //typedef tStruct timeStruct;
 tStruct currentTime;  //global variable to hold the "current time" (when it was last checked)
 tStruct alarmTime;
-int gBrightness; //Current position in the fade from start to end colour in the wakeup sequence.
+float gBrightness; //Current position in the fade from start to end colour in the wakeup sequence. This needs to be a float for the fading to work properly by preventing the code from dropping the decimals when it's calculating the fade values.
 /*
 gBrightness = 0 will set the strip to it's 'off' colour, which isn't necessarily actually off; it's just the values that are stored in m1
 gBrightness = WAKEUPSTEPS will set the strip to its 'on' colour, which is the values that are stored in m2
 */
-
+bool gDebug; // flag to store whether to print out a bunch of extra debug information.
 
 
 
@@ -74,33 +75,16 @@ enum mode {
 mode opMode;
 int wakeupAddress = 2;  //Location in the EEPRMOM that will contain the alarm time that's written to it.
 
+#include "rtcHandlers.h"  //This needs to be later because it depends on some of the declarations that precede it here...
 
 
-void printTm(Stream &str, struct RTCx::tm *tm)
-{
-  Serial.print(tm->tm_year + 1900);
-  Serial.print('-');
-  Serial.print(tm->tm_mon + 1);
-  Serial.print('-');
-  Serial.print(tm->tm_mday);
-  Serial.print('T');
-  Serial.print(tm->tm_hour);
-  Serial.print(':');
-  Serial.print(tm->tm_min);
-  Serial.print(':');
-  Serial.print(tm->tm_sec);
-  Serial.print(" yday=");
-  Serial.print(tm->tm_yday);
-  Serial.print(" wday=");
-  Serial.println(tm->tm_wday);
-}
 
 void setup() {
   int eepromReady;
+  gDebug = false;
 
-  // put your setup code here, to run once:
   Serial.begin(9600);
-  while (!Serial)
+  while (!Serial) //Will hang for Leonardo, others ought to run OK.
 
     opMode = runMode;
   strip.begin();
@@ -197,12 +181,21 @@ void loop() {
       } else {
         Serial.println("ERROR. Settings not saved");
       }
+
     } else if (  input.charAt(0) == '6') {
       for (int i = 0; i < ( (M2ADDR + (4 * NUMPIXELS))); i++) {
         Serial.print(i, DEC);
         Serial.print(" ");
         Serial.println(EEPROM.read(i), DEC);
       }
+    } else if (  input.charAt(0) == '7') {
+      getBrightness();
+    } else if (input.charAt(0) == '8') {
+      gDebug = true;
+
+    } else if (input.charAt(0) == '9') {
+      gDebug = false;
+
     } else {
       Serial.println("Command not recognised");
     }
@@ -210,7 +203,7 @@ void loop() {
   }
 
 
- 
+
 
   //====================================
   //Lighting mode handlers
@@ -218,8 +211,8 @@ void loop() {
 
   //Check that the alarm time hasn't passed
   readTime = getTimeFromRTC();
-  Serial.print("Brightness = ");
-  Serial.println(gBrightness, DEC);
+  //  Serial.print("Brightness = ");
+  //  Serial.println(gBrightness, DEC);
 
 
   if (opMode == runMode) {
@@ -259,9 +252,9 @@ void loop() {
     gBrightness = 0;  //Note that gBrightness = 0 does not necessarily mean that the strip is off. If the off pattern is non-zero, you'll get light here.
 
   }
-  
-  
-   //WAKEUPSTEPS are used as the quanta of fading brightnesses in the current fade-up routine. Also will use them for the manual fading settings.
+
+
+  //WAKEUPSTEPS are used as the quanta of fading brightnesses in the current fade-up routine. Also will use them for the manual fading settings.
   if (gBrightness < 0) {
     gBrightness = 0;
     opMode = runMode;  //How to get the thing into sleep mode
@@ -293,30 +286,33 @@ void handleDownButton() {
   gBrightness -= 1;
 }
 
+void getBrightness() {
+  String input;
+  // Prompt for the brightness value to be entered, and set it to the global.
+  Serial.setTimeout(10000); //Allow 10s to set the time
+
+  Serial.println("Enter New Brightness");
+  input = Serial.readStringUntil('\n');
+  gBrightness = input.toInt();
+  Serial.println(gBrightness, DEC);
+  Serial.setTimeout(1000); //Allow 10s to set the time
+
+}
+
 void setStripColour() {
   //A single place to set the colours of all the pixels in a loop from the various places that they could be set...
-  Serial.print("setStripColour brightness=");
-  Serial.println(gBrightness, DEC);
+
+  if (gDebug == true) {
+    Serial.println(" ");
+    Serial.print("setStripColour brightness=");
+    Serial.println(gBrightness, DEC);
+  }
   for (int i = 0; i < NUMPIXELS; i++) {
     strip.setPixelColor(i, setColourFade (m1[i], m2[i], gBrightness));
   }
   strip.show();
 }
 
-tStruct getTimeFromRTC() {
-  //Get the current time from the i2c RTC
-  //Will set the global time variable
-  tStruct myTimeStruct;
-  struct RTCx::tm tm;  //From RTCx library, this is a C-style time struct.
-  rtc.readClock(tm);  //Load the current timestamp into the tm variable
-  //printTm(Serial, &tm); //Print the time from the RTC
-
-  myTimeStruct.hours =  tm.tm_hour;
-  myTimeStruct.mins = tm.tm_min;
-
-  // Serial.println("getTimeFromRTC");
-  return myTimeStruct;
-}
 
 
 //=================================
@@ -385,72 +381,13 @@ void printMenu() {
   Serial.println("4: Set Sleep pattern");
   Serial.println("5: Save patterns to EEPROM");
   Serial.println("6: Read EEPROM");
+  Serial.println("7: Set Brightness");
+  Serial.println("8: Turn Debug Display ON");
+  Serial.println("9: Turn Debug Display OFF");
 
 }
 
 
-void setTime() {
-  struct RTCx::tm tm;  //From RTCx library, this is a C-style time struct.
-  tStruct setTime;
-  Serial.println("SET THE TIME");
-  setTime = getTimeValue();
-
-  rtc.readClock(&tm); //Load this to keep the date value etc. in place, and to give us a valid time struct to send back to the RTC (which otherwise will be full of undefined values)
-  tm.tm_hour = setTime.hours;
-  tm.tm_min = setTime.mins;
-  rtc.setClock(tm);
-  Serial.print("The time is ");
-  Serial.print(setTime.hours, DEC);
-  Serial.print(":");
-  Serial.println(setTime.mins, DEC);
-
-}
-
-
-void setWakeup() {
-  //Get the wakeup time from the user, and then set it into the global alarm time.
-  //Wakeup should happen in a sequence of a few minutes after the alarm time that's set here.
-  //We're initially going to fade up the lights
-
-  //There's mileage in just setting the global to free a bit or RAM if necessary
-  //tStruct almTime;
-  Serial.println("SET THE WAKEUP TIME");
-  alarmTime = getTimeValue();
-
-  //  Serial.print("almTime");
-  //  Serial.print(alarmTime.hours, DEC);
-  //  Serial.print(":");
-  //  Serial.println(alarmTime.mins, DEC);
-
-  EEPROM.put(wakeupAddress, alarmTime );
-  EEPROM.put(0, 0b10101010);
-  //alarmTime = almTime;
-}
-
-tStruct getTimeValue() {
-  //Get the time from the user over Serial, and then pump it out to the I2C RTC peripheral
-  String time;
-  tStruct myTimeStruct;
-  int hours, mins;
-  Serial.setTimeout(10000); //Allow 10s to set the time
-  Serial.println("Enter the time hhmm");
-  time = Serial.readStringUntil('\n');
-  if (time.length() < 4) {
-    Serial.println("Error, incorrect format");
-  } else {
-
-    myTimeStruct.hours = time.substring(0, 2).toInt();
-    myTimeStruct.mins = time.substring(2, 4).toInt();
-    //    Serial.print(time);
-    //    Serial.print(" -> ");
-    //    Serial.print(myTimeStruct.hours, DEC);
-    //    Serial.print(":");
-    //    Serial.println(myTimeStruct.mins, DEC);
-  }
-  Serial.setTimeout(1000); //Allow 10s to set the time
-
-  return myTimeStruct;
-}
 
 
 uint32_t setColourFade (uint32_t startColour, uint32_t endColour, int currentStep) {
@@ -477,7 +414,7 @@ uint32_t setColourFade (uint32_t startColour, uint32_t endColour, int currentSte
   */
 
   // WAKEUPSTEPS = Number of different colours for the fade to happen over
-
+  //NOTE: currentStep is a float so that the maths works sensibly and doesn't truncate the RGB values inaccurately.
 
 
   //Unpack the Color values into bytes (from the ::setPixelColor() function).
@@ -500,19 +437,21 @@ uint32_t setColourFade (uint32_t startColour, uint32_t endColour, int currentSte
     //Need to think of a better way to get this to behave.
 
 
-// WHAT'S happening is that the stepsize (r1-r)/WAKEUPSTEPS is in the range 1-5, depending on the values in the pattern, so if the fade goes downwards (i.e. to darker values), the minium valu9e that you can have is 64 (i.e. 64*1), which is obviously not correct.
-// Need a more robust algorithm here. 
-    r = (int)r + round((((int)r1 - (int)r) / WAKEUPSTEPS) * currentStep); //Overwrite the r, g, b, values with the new ones.
-    g = g + round(((g1 - g) / WAKEUPSTEPS) * currentStep);
-    b = b + round(((b1 - b) / WAKEUPSTEPS) * currentStep);
+    // WHAT'S happening is that the stepsize (r1-r)/WAKEUPSTEPS is in the range 1-5, depending on the values in the pattern, so if the fade goes downwards (i.e. to darker values), the minium valu9e that you can have is 64 (i.e. 64*1), which is obviously not correct.
+    // Need a more robust algorithm here.
+    r = r + (((r1 - r) / (float)WAKEUPSTEPS) * currentStep); //Overwrite the r, g, b, values with the new ones.
+    g = g + round(((g1 - g) / (float)WAKEUPSTEPS) * currentStep);
+    b = b + round(((b1 - b) / (float)WAKEUPSTEPS) * currentStep);
+
+    if (gDebug == true) {
+      Serial.print(":");
+      Serial.print(r, DEC);
+      Serial.print(", ");
+      Serial.print(g, DEC);
+      Serial.print(", ");
+      Serial.print(b, DEC);
+    }
   }
-    Serial.print(":");
-    Serial.print(r, DEC);
-    Serial.print(", ");
-    Serial.print(g, DEC);
-    Serial.print(", ");
-    Serial.println(b, DEC);
-  
 
   //  Serial.println("setColourFade was called");
   return strip.Color(r, g, b);
