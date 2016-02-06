@@ -46,6 +46,7 @@ Add a Sleep to the code so that the microcontroller isn't spinning away consumin
 #define NUMPIXELS      4
 #define M1ADDR  16
 #define M2ADDR  (4*NUMPIXELS)+M1ADDR  //Location for the two array locations in EEPROM. Note that each pattern array is in 32b format for each element. 
+#define FADEUPSTEPS 10 // for a ~5 minute fade-up (5*1s*64)
 
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 uint32_t m1[NUMPIXELS]; //Globals to hold the two different fade patterns.
@@ -64,6 +65,7 @@ gBrightness = 0 will set the strip to it's 'off' colour, which isn't necessarily
 gBrightness = WAKEUPSTEPS will set the strip to its 'on' colour, which is the values that are stored in m2
 */
 bool gDebug; // flag to store whether to print out a bunch of extra debug information.
+int fadeUpPass; // counter to reduce the rate at which the lighting fades up (this value is incremented on each pass (i.e. once/second) and then the gBrightness is incremented when it rolls over. 
 
 
 
@@ -83,7 +85,7 @@ void setup() {
   int eepromReady;
   gDebug = false;
 
-  Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial) //Will hang for Leonardo, others ought to run OK.
 
     opMode = runMode;
@@ -147,7 +149,7 @@ void setup() {
   pinMode(upButton, INPUT_PULLUP);
   pinMode(downButton, INPUT_PULLUP);
   //Handle the pressing of the buttons.
-  //  attachInterrupt(upButton, handleUpButton, RISING);
+  //attachInterrupt(upButton, handleUpButton, RISING);
   //  attachInterrupt(downButton, handleDownButton, RISING);
 }
 
@@ -156,6 +158,7 @@ void loop() {
   String input;
   tStruct readTime; //a holder space to put time data that's read back from the clock.
 
+  int button = 0;
 
 
   //========================================
@@ -201,6 +204,20 @@ void loop() {
     }
     printMenu();
   }
+  
+  button = digitalRead(upButton);
+  if (button == LOW) {
+    //    handleUpButton();
+    Serial.println("UP");
+    gBrightness++;
+  }
+  
+  button = digitalRead(downButton);
+  if (button == LOW) {
+    //    handleDownButton();
+    gBrightness--;
+    Serial.println("DOWN");
+  }
 
 
 
@@ -240,7 +257,14 @@ void loop() {
     //For each 20s, increase the brightness by FADETIME(s)/20s
     //setColourFade (startColour, endColour, currentStep);
     */
-    gBrightness += 1; //Advance for next time round
+    fadeUpPass += 1; //Advance for next time round
+    
+    if(fadeUpPass >= FADEUPSTEPS) {  //Once we get to the requisite number of steps, increase the brightness, and reset the counter. 
+    
+      gBrightness +=1;
+      fadeUpPass = 0;
+    }
+    
     if ((gBrightness > WAKEUPSTEPS )) {  // && ((readTime.hours != alarmTime.hours) && (readTime.mins != alarmTime.mins))) {
       //      This should make sure that the alarm only fires once since this code should only fire once the time isn't equal to the alarm minute...
       opMode = runMode; //Go back to runMode again.
@@ -270,21 +294,21 @@ void loop() {
   delay(1000);  //prevent racing
 }
 
-void handleUpButton() {
-  //Handle the interrupt that's fired by the upButton being pressed.
-  //This is going to set the value of the global brightness to something other than the current value
-  gBrightness += 1;
-
-  //Switch to runMode (i.e. armed for an alarm).
-  //runMode tests to see whether an alarm should be fired, so the logic path if the switch is off is to enter runMode, discover the switch is off, and  then exit runMode for sleep mode
-  opMode = runMode;
-  Serial.println("->runMode");
-}
-
-void handleDownButton() {
-  //opMode = runMode;
-  gBrightness -= 1;
-}
+//void handleUpButton() {
+//  //Handle the interrupt that's fired by the upButton being pressed.
+//  //This is going to set the value of the global brightness to something other than the current value
+//  gBrightness += 1;
+//
+//  //Switch to runMode (i.e. armed for an alarm).
+//  //runMode tests to see whether an alarm should be fired, so the logic path if the switch is off is to enter runMode, discover the switch is off, and  then exit runMode for sleep mode
+//  //  opMode = runMode;
+//  //  Serial.println("->runMode");
+//}
+//
+//void handleDownButton() {
+//  //opMode = runMode;
+//  gBrightness -= 1;
+//}
 
 void getBrightness() {
   String input;
@@ -377,8 +401,8 @@ void printMenu() {
   //Display the menu on tty
   Serial.println("\n1: Set time"); //Add the newline to make the menu more readable
   Serial.println("2: Set Wakeup");
-  Serial.println("3: Set Wakeup pattern");
-  Serial.println("4: Set Sleep pattern");
+  Serial.println("3: Set Sleep pattern");
+  Serial.println("4: Set Wakeup pattern");
   Serial.println("5: Save patterns to EEPROM");
   Serial.println("6: Read EEPROM");
   Serial.println("7: Set Brightness");
