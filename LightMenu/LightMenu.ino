@@ -86,7 +86,7 @@ void setup() {
   gDebug = false;
 
   Serial.begin(115200);
-  while (!Serial) //Will hang for Leonardo, others ought to run OK.
+ // while (!Serial) //Will hang for Leonardo, others ought to run OK.
 
     opMode = runMode;
   strip.begin();
@@ -142,7 +142,7 @@ void setup() {
   EEPROM.get(M2ADDR, m2);
 
   printMenu();
-
+  pinMode(13, INPUT); //To disable the LED pin and prevent it from lighting the LED
 
   gBrightness = 0; //Default to off when the system first starts up.
 
