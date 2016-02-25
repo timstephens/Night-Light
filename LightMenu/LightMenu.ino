@@ -1,3 +1,5 @@
+
+
 /*
 
   Light Menu
@@ -18,7 +20,7 @@
 TODO:
 =====
 
-Add sensible method for alarm wakeup pattern
+Add sensible method for alarm wakeup pattern 
 Add a way to configure the patterns? @DONE
 Tidy up the code to remove extraneous lines @DONE
 Prevent alarm from firing multiple times during the alarm minute if the fade up is short (i.e. test for rollover of the alarm time, rather than a simple equality test) @DONE
@@ -26,6 +28,23 @@ Add a way to use switches to fade lamp up and down @done(?)
 Add a way to select the mode that the lamp is in (perhaps using the same switches in a sensible way).
 Add a Sleep to the code so that the microcontroller isn't spinning away consuming power the whole time.
 
+
+LICENSE
+========
+
+
+  This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
